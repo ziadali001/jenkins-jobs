@@ -8,43 +8,49 @@ library identifier: 'library-jenkins@master', retriever: modernSCM(
 )
 
 
-def gv
-
 pipeline {
     agent any
     tools {
         maven 'Maven'
     }
+    environment {
+        IMAGE_NAME = 'ziadmali/my-repo:jma-3.0'
+    }
     stages {
-        stage("init") {
+        stage('build app') {
+            steps {
+               script {
+                  echo 'building application jar...'
+                  buildJar()
+               }
+            }
+        }
+        stage('build image') {
             steps {
                 script {
-                    gv = load "script.groovy"
+                   echo 'building docker image...'
+                   buildImage(env.IMAGE_NAME)
+                   dockerLogin()
+                   dockerPush(env.IMAGE_NAME)
                 }
             }
         }
-        stage("build jar") {
+        stage('deploy') {
             steps {
                 script {
-                    buildJar()
+                   echo 'deploying docker image to EC2...'
+
+                   def shellCmd = "bash ./server-cmds.sh ${IMAGE_NAME}"
+                   def ec2Instance = "ec2-user@3.93.77.4"
+
+                   sshagent(['ec2-server-key']) {
+                       sh "scp -o StrictHostKeyChecking=no server-cmds.sh ${ec2Instance}:/home/ec2-user"
+                       sh "scp -o StrictHostKeyChecking=no docker-compose.yaml ${ec2Instance}:/home/ec2-user"
+                       sh "ssh -o StrictHostKeyChecking=no ${ec2Instance} ${shellCmd}"
+                   }
                 }
             }
         }
-        stage("build and push image") {
-            steps {
-                script {
-                    buildImage 'ziadmali/my-repo:jma-4.0'
-                    dockerLogin()
-                    dockerPush 'ziadmali/my-repo:jma-4.0'
-                }
-            }
-        }
-        stage("deploy") {
-            steps {
-                script {
-                    gv.deployApp()
-                }
-            }
-        }
-    }   
+    }
 }
+
